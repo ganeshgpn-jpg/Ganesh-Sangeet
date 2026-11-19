@@ -1,0 +1,53 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install JS dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build web assets (bundle plugins + inject native bridge)
+        run: |
+          npm run bundle
+          npm run prepare-www
+
+      - name: Create Android project and apply native patches
+        run: |
+          npx cap add android
+          node scripts/patch-android.js
+          npx cap sync android
+
+      - name: Use the fixed debug keystore (so updates install over the old app)
+        run: |
+          mkdir -p ~/.android
+          cp signing/debug.keystore ~/.android/debug.keystore
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ganesh-sangeet.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ganesh-sangeet-apk
+          path: ganesh-sangeet.apk
